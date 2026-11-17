@@ -31,7 +31,7 @@
     </div>
   </div>
 
-  <!-- Pantalla Principal del Chat (oculta hasta iniciar sesión) -->
+  <!-- Pantalla Principal del Chat -->
   <div id="app-container" class="app-container hidden">
     <aside class="sidebar">
       <div class="sidebar-top">
@@ -40,7 +40,13 @@
       </div>
       
       <div class="user-panel">
-        <span id="current-user">Usuario</span>
+        <div id="open-edit-profile" class="user-info-trigger" title="Editar perfil">
+          <img id="current-user-avatar" class="avatar-small" src="" alt="Avatar" />
+          <div class="user-details">
+            <span id="current-user">Usuario</span>
+            <small>Editar perfil</small>
+          </div>
+        </div>
         <button id="logout-btn" type="button">Salir</button>
       </div>
     </aside>
@@ -53,6 +59,46 @@
         <button type="submit">Enviar</button>
       </form>
     </main>
+  </div>
+
+  <!-- Modal 1: Editar Mi Perfil -->
+  <div id="edit-profile-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Editar Perfil</h3>
+      <form id="edit-profile-form">
+        <div class="avatar-upload-section">
+          <img id="edit-avatar-preview" class="avatar-large" src="" alt="Vista previa" />
+          <label for="avatar-file-input" class="file-upload-btn">Cambiar foto</label>
+          <input id="avatar-file-input" type="file" accept="image/*" class="hidden" />
+        </div>
+
+        <label class="modal-label">SOBRE MÍ (BIOGRAFÍA)</label>
+        <textarea id="edit-bio-input" rows="3" maxlength="160" placeholder="Escribe algo sobre ti..."></textarea>
+        <small class="char-hint">Máximo 160 caracteres</small>
+
+        <p id="edit-profile-error" class="auth-error"></p>
+
+        <div class="modal-actions">
+          <button type="button" id="cancel-edit-profile" class="btn-secondary">Cancelar</button>
+          <button type="submit">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Ver Perfil de un Usuario -->
+  <div id="view-profile-modal" class="modal hidden">
+    <div class="profile-card">
+      <div class="profile-banner"></div>
+      <div class="profile-card-body">
+        <img id="view-profile-avatar" class="avatar-large profile-card-avatar" src="" alt="Avatar" />
+        <h3 id="view-profile-username">Usuario</h3>
+        <div class="profile-divider"></div>
+        <span class="modal-label">SOBRE MÍ</span>
+        <p id="view-profile-bio" class="profile-bio-text"></p>
+        <button type="button" id="close-view-profile" class="btn-full">Cerrar</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

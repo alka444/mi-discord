@@ -13,8 +13,7 @@ const io = new Server(server);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'clave_respaldo_cambiar_en_env';
 
-// Permitir que Express entienda datos en formato JSON
-app.use(express.json());
+app.use(express.json({ limit: '500kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 1. Conectar a MongoDB Atlas
@@ -22,10 +21,12 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Conectado a MongoDB Atlas'))
   .catch((err) => console.error('Error conectando a MongoDB:', err));
 
-// 2. Modelos de la base de datos (Usuarios y Mensajes)
+// 2. Modelos de la base de datos
 const usuarioSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true },
-  password: { type: String, required: true }
+  password: { type: String, required: true },
+  avatar: { type: String, default: '' },
+  bio: { type: String, default: '¡Hola! Soy nuevo en Mini Discord.', maxlength: 160 }
 });
 
 const mensajeSchema = new mongoose.Schema({
@@ -37,7 +38,22 @@ const mensajeSchema = new mongoose.Schema({
 const Usuario = mongoose.model('Usuario', usuarioSchema);
 const Mensaje = mongoose.model('Mensaje', mensajeSchema);
 
-// 3. Ruta para CREAR CUENTA (Registro)
+// Middleware para verificar el token en rutas HTTP
+function verificarToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'No autorizado' });
+
+  try {
+    const datos = jwt.verify(token, JWT_SECRET);
+    req.username = datos.username;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Sesión inválida o expirada' });
+  }
+}
+
+// 3. Ruta para CREAR CUENTA
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -46,7 +62,6 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'El usuario debe tener al menos 3 letras y la contraseña 4 caracteres.' });
     }
 
-    // Encriptar contraseña antes de guardarla
     const passwordEncriptada = await bcrypt.hash(password, 10);
 
     const nuevoUsuario = new Usuario({
@@ -56,10 +71,14 @@ app.post('/api/register', async (req, res) => {
 
     await nuevoUsuario.save();
 
-    // Crear pase de sesión (válido por 7 días)
     const token = jwt.sign({ username: nuevoUsuario.username }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.status(201).json({ token, username: nuevoUsuario.username });
+    res.status(201).json({
+      token,
+      username: nuevoUsuario.username,
+      avatar: nuevoUsuario.avatar,
+      bio: nuevoUsuario.bio
+    });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({ error: 'Ese nombre de usuario ya está ocupado.' });
@@ -68,7 +87,7 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// 4. Ruta para INICIAR SESIÓN (Login)
+// 4. Ruta para INICIAR SESIÓN
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -78,7 +97,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Usuario o contraseña incorrectos.' });
     }
 
-    // Comparar contraseña escrita con la encriptada en MongoDB
     const esValida = await bcrypt.compare(password, usuario.password);
     if (!esValida) {
       return res.status(400).json({ error: 'Usuario o contraseña incorrectos.' });
@@ -86,50 +104,130 @@ app.post('/api/login', async (req, res) => {
 
     const token = jwt.sign({ username: usuario.username }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.json({ token, username: usuario.username });
+    res.json({
+      token,
+      username: usuario.username,
+      avatar: usuario.avatar || '',
+      bio: usuario.bio || ''
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al iniciar sesión.' });
   }
 });
 
-// 5. Middleware de Socket.io: solo deja conectar a usuarios con token válido
+// 5. Ruta para ACTUALIZAR PERFIL (foto y bio)
+app.put('/api/profile', verificarToken, async (req, res) => {
+  try {
+    const { avatar, bio } = req.body;
+
+    // Validar que el avatar sea vacío o una imagen base64 válida y ligera
+    if (avatar !== undefined && avatar !== '') {
+      const esImagenValida = typeof avatar === 'string' &&
+        (avatar.startsWith('data:image/jpeg;base64,') || avatar.startsWith('data:image/png;base64,')) &&
+        avatar.length < 150000;
+
+      if (!esImagenValida) {
+        return res.status(400).json({ error: 'Formato de imagen no válido o demasiado pesado.' });
+      }
+    }
+
+    const bioLimpia = typeof bio === 'string' ? bio.trim().slice(0, 160) : '';
+
+    const actualizaciones = { bio: bioLimpia };
+    if (avatar !== undefined) {
+      actualizaciones.avatar = avatar;
+    }
+
+    const usuarioActualizado = await Usuario.findOneAndUpdate(
+      { username: req.username },
+      actualizaciones,
+      { new: true }
+    );
+
+    // Avisar a todos los conectados si cambió su avatar para actualizar el chat en vivo
+    io.emit('perfil actualizado', {
+      username: usuarioActualizado.username,
+      avatar: usuarioActualizado.avatar
+    });
+
+    res.json({
+      username: usuarioActualizado.username,
+      avatar: usuarioActualizado.avatar,
+      bio: usuarioActualizado.bio
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar el perfil.' });
+  }
+});
+
+// 6. Ruta para VER EL PERFIL DE CUALQUIER USUARIO
+app.get('/api/users/:username', verificarToken, async (req, res) => {
+  try {
+    const usuario = await Usuario.findOne({ username: req.params.username }, 'username avatar bio');
+    if (!usuario) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+    res.json({
+      username: usuario.username,
+      avatar: usuario.avatar || '',
+      bio: usuario.bio || 'Sin biografía.'
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener perfil.' });
+  }
+});
+
+// 7. Middleware de Socket.io
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
-  if (!token) {
-    return next(new Error('No autorizado'));
-  }
+  if (!token) return next(new Error('No autorizado'));
 
   try {
     const datos = jwt.verify(token, JWT_SECRET);
-    socket.username = datos.username; // Guardamos el nombre real en la conexión
+    socket.username = datos.username;
     next();
   } catch (err) {
     next(new Error('Sesión expirada o inválida'));
   }
 });
 
-// 6. Eventos del chat en tiempo real
+// 8. Eventos del chat en tiempo real
 io.on('connection', async (socket) => {
   console.log('Usuario autenticado conectado:', socket.username);
 
   try {
-    const historial = await Mensaje.find().sort({ fecha: 1 }).limit(50);
-    socket.emit('cargar historial', historial);
+    const historial = await Mensaje.find().sort({ fecha: 1 }).limit(50).lean();
+    const usuarios = await Usuario.find({}, 'username avatar').lean();
+
+    // Crear un mapa rápido de { nombreUsuario: avatar }
+    const mapaAvatares = {};
+    usuarios.forEach((u) => {
+      mapaAvatares[u.username] = u.avatar || '';
+    });
+
+    const historialConAvatares = historial.map((msg) => ({
+      ...msg,
+      avatar: mapaAvatares[msg.user] || ''
+    }));
+
+    socket.emit('cargar historial', historialConAvatares);
   } catch (error) {
     console.error('Error al cargar historial:', error);
   }
 
   socket.on('chat message', async (data) => {
     try {
-      // Usamos socket.username del servidor para que nadie pueda falsificar su nombre
       const nuevoMensaje = new Mensaje({
         user: socket.username,
         text: data.text
       });
       await nuevoMensaje.save();
 
+      const usuarioActual = await Usuario.findOne({ username: socket.username }, 'avatar').lean();
+
       io.emit('chat message', {
         user: socket.username,
+        avatar: usuarioActual ? usuarioActual.avatar : '',
         text: data.text
       });
     } catch (error) {
