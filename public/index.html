@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Discord</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <h2>Mi Servidor</h2>
+            <div class="channel active"># general</div>
+        </aside>
+        <main class="chat-area">
+            <header class="chat-header"># general</header>
+            <ul id="messages"></ul>
+            <form id="chat-form">
+                <input id="username" type="text" placeholder="Tu apodo" required />
+                <input id="message-input" type="text" placeholder="Enviar mensaje a #general" autocomplete="off" required />
+                <button type="submit">Enviar</button>
+            </form>
+        </main>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
