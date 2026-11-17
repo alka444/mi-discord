@@ -5,6 +5,19 @@ const usernameInput = document.getElementById('username');
 const messageInput = document.getElementById('message-input');
 const messagesList = document.getElementById('messages');
 
+// Función reutilizable para dibujar cualquier mensaje en pantalla
+function agregarMensajeEnPantalla(data) {
+  const item = document.createElement('li');
+  const autor = document.createElement('strong');
+  autor.textContent = data.user;
+
+  item.appendChild(autor);
+  item.appendChild(document.createTextNode(' ' + data.text));
+
+  messagesList.appendChild(item);
+  messagesList.scrollTop = messagesList.scrollHeight;
+}
+
 // 1. Enviar mensaje al servidor
 form.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -17,12 +30,15 @@ form.addEventListener('submit', (e) => {
   }
 });
 
-// 2. Recibir mensaje del servidor y mostrarlo en pantalla
+// 2. Recibir mensaje nuevo en tiempo real
 socket.on('chat message', (data) => {
-  const item = document.createElement('li');
-  item.innerHTML = `<strong>${data.user}</strong> ${data.text}`;
-  messagesList.appendChild(item);
-  
-  // Hacer scroll automático hacia abajo
-  messagesList.scrollTop = messagesList.scrollHeight;
+  agregarMensajeEnPantalla(data);
+});
+
+// 3. Recibir y mostrar el historial guardado en MongoDB al abrir la página
+socket.on('cargar historial', (mensajes) => {
+  messagesList.innerHTML = '';
+  mensajes.forEach((msg) => {
+    agregarMensajeEnPantalla(msg);
+  });
 });
